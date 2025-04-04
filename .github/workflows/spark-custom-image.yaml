@@ -28,4 +28,4 @@ jobs:
           push: true
           build-args: |
           tags: |
-            ghcr.io/spark3.5.5-custom:${{ github.sha }}
+            ghcr.io/phish3y/spark3.5.5-custom:${{ github.sha }}
