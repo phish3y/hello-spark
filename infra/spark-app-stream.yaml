@@ -1,14 +1,14 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: hello-spark
+  name: hello-spark-stream
   namespace: default
 spec:
   type: Scala
   mode: cluster
-  image: spark:3.5.5
-  mainClass: HelloSpark
-  mainApplicationFile: local:///tmp/jars/hello-spark_2.12-1.0.jar
+  image: ghcr.io/phish3y/spark3.5.5-custom:afda36dd004107d8cf40cfbb4f71bff8aee64566
+  mainClass: HelloSparkStream
+  mainApplicationFile: s3a://phish3y-hello-spark/jars/hello-spark_2.12-1.0.jar
   driver:
     cores: 1
     memory: 1G
@@ -28,9 +28,6 @@ spec:
           secretKeyRef:
             name: spark-apps
             key: aws-secret-access-key
-    volumeMounts:
-      - name: extra-jars
-        mountPath: /tmp/jars
   executor:
     cores: 2
     instances: 4
@@ -51,15 +48,3 @@ spec:
           secretKeyRef:
             name: spark-apps
             key: aws-secret-access-key
-    volumeMounts:
-      - name: extra-jars
-        mountPath: /tmp/jars
-  deps:
-    jars:
-      - local:///tmp/jars/hadoop-common-3.3.4.jar
-      - local:///tmp/jars/hadoop-aws-3.3.4.jar
-      - local:///tmp/jars/aws-java-sdk-bundle-1.12.782.jar
-  volumes:
-    - name: extra-jars
-      persistentVolumeClaim:
-        claimName: spark-extra-jars

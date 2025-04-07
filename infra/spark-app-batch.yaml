@@ -1,0 +1,50 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: hello-spark-batch
+  namespace: default
+spec:
+  type: Scala
+  mode: cluster
+  image: ghcr.io/phish3y/spark3.5.5-custom:afda36dd004107d8cf40cfbb4f71bff8aee64566
+  mainClass: HelloSparkBatch
+  mainApplicationFile: s3a://phish3y-hello-spark/jars/hello-spark_2.12-1.0.jar
+  driver:
+    cores: 1
+    memory: 1G
+    labels:
+      version: 3.5.5
+    serviceAccount: spark-operator-spark
+    env:
+      - name: AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT
+        value: "true"
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: spark-apps
+            key: aws-access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: spark-apps
+            key: aws-secret-access-key
+  executor:
+    cores: 2
+    instances: 4
+    memory: 2G
+    labels:
+      version: 3.5.5
+    serviceAccount: spark-operator-spark
+    env:
+      - name: AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT
+        value: "true"
+      - name: AWS_ACCESS_KEY_ID
+        valueFrom:
+          secretKeyRef:
+            name: spark-apps
+            key: aws-access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: spark-apps
+            key: aws-secret-access-key
