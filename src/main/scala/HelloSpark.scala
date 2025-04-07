@@ -53,22 +53,21 @@ object HelloSparkBatch {
       .csv("s3a://phish3y-hello-spark/huts.csv")
       .as[Hut]
 
-    val hut_count = huts.count()
-    logger.info(s"hut count: ${hut_count}")
+    logger.info(s"hut count: ${huts.count()}")
     
-    val enabled_huts: Dataset[Hut] = huts
+    val enabledHuts: Dataset[Hut] = huts
       .filter(hut => hut.status.equals("T"))
       .cache()
 
-    logger.info(s"enabled hut count: ${enabled_huts.count()}")
+    logger.info(s"enabled hut count: ${enabledHuts.count()}")
 
-    logger.info(s"WA huts: ${enabled_huts.filter(hut => hut.state.equals("Washington")).count()}")
-    logger.info(s"CO huts: ${enabled_huts.filter(hut => hut.state.equals("Colorado")).count()}")
-    logger.info(s"CA huts: ${enabled_huts.filter(hut => hut.state.equals("California")).count()}")
-    logger.info(s"OR huts: ${enabled_huts.filter(hut => hut.state.equals("Oregon")).count()}")
-    logger.info(s"WY huts: ${enabled_huts.filter(hut => hut.state.equals("Wyoming")).count()}")
-    logger.info(s"MT huts: ${enabled_huts.filter(hut => hut.state.equals("Montana")).count()}")
-    logger.info(s"NM huts: ${enabled_huts.filter(hut => hut.state.equals("New Mexico")).count()}")
+    logger.info(s"WA huts: ${enabledHuts.filter(hut => hut.state.equals("Washington")).count()}")
+    logger.info(s"CO huts: ${enabledHuts.filter(hut => hut.state.equals("Colorado")).count()}")
+    logger.info(s"CA huts: ${enabledHuts.filter(hut => hut.state.equals("California")).count()}")
+    logger.info(s"OR huts: ${enabledHuts.filter(hut => hut.state.equals("Oregon")).count()}")
+    logger.info(s"WY huts: ${enabledHuts.filter(hut => hut.state.equals("Wyoming")).count()}")
+    logger.info(s"MT huts: ${enabledHuts.filter(hut => hut.state.equals("Montana")).count()}")
+    logger.info(s"NM huts: ${enabledHuts.filter(hut => hut.state.equals("New Mexico")).count()}")
    
     spark.stop()
   }
@@ -78,9 +77,14 @@ object HelloSparkStreamProducer {
   val logger = Logger.getLogger(getClass().getName())
 
   def main(args: Array[String]): Unit = {
+    val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
+      case Some(broker) => broker
+      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+    }    
+
     val spark: SparkSession = SparkSession
       .builder
-      .appName("hello-spark-batch")
+      .appName("hello-spark-stream-producer")
       .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
       .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
       .getOrCreate()
@@ -95,7 +99,7 @@ object HelloSparkStreamProducer {
       .csv("s3a://phish3y-hello-spark/huts.csv")
       .as[Hut]
 
-    val kafka_df: Dataset[Kafka] = huts
+    val kafkaDs: Dataset[Kafka] = huts
       .filter(row => row.state.equals("New Mexico")) // TODO
       .map(row => {
         val value = Seq(
@@ -114,11 +118,11 @@ object HelloSparkStreamProducer {
         )
       })
 
-    kafka_df
+    kafkaDs
       .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
       .write
       .format("kafka")
-      .option("kafka.bootstrap.servers", "192.168.0.132:9094")
+      .option("kafka.bootstrap.servers", kafkaBroker)
       .option("topic", "hello-topic")
       .save()
 
@@ -130,9 +134,14 @@ object HelloSparkStreamSubscriber {
   val logger = Logger.getLogger(getClass().getName())
 
   def main(args: Array[String]): Unit = {
+    val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
+      case Some(broker) => broker
+      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+    }    
+
     val spark: SparkSession = SparkSession
       .builder
-      .appName("hello-spark-stream")
+      .appName("hello-spark-stream-subscriber")
       .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
       .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.DefaultAWSCredentialsProviderChain")
       .getOrCreate()
@@ -142,7 +151,7 @@ object HelloSparkStreamSubscriber {
     val stream = spark
       .readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", "192.168.0.132:9094")
+      .option("kafka.bootstrap.servers", kafkaBroker)
       .option("subscribe", "hello-topic")
       .option("startingOffsets", "latest")
       .load()

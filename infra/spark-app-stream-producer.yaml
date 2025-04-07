@@ -1,13 +1,13 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: hello-spark-batch
+  name: hello-spark-stream-producer
   namespace: default
 spec:
   type: Scala
   mode: cluster
   image: ghcr.io/phish3y/spark3.5.5-custom:7d740994ddc109bb5501379f3383e31892c39780
-  mainClass: HelloSparkBatch
+  mainClass: HelloSparkStreamProducer
   mainApplicationFile: s3a://phish3y-hello-spark/jars/hello-spark_2.12-1.0.jar
   driver:
     cores: 1
@@ -18,6 +18,8 @@ spec:
     env:
       - name: AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT
         value: "true"
+      - name: KAFKA_BROKER
+        value: 10.100.80.208:9094
       - name: AWS_ACCESS_KEY_ID
         valueFrom:
           secretKeyRef:

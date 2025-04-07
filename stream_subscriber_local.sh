@@ -1,7 +1,7 @@
 #!/bin/bash
 sbt package
 
-AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT=true \
+AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT=true KAFKA_BROKER=192.168.0.132:9094 \
 $SPARK_HOME/bin/spark-submit \
   --class "HelloSparkStreamSubscriber" \
   --master local[4] \
