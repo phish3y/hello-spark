@@ -244,7 +244,7 @@ object EventSubscriber {
       .load()
       .selectExpr("CAST(value AS STRING)")
       .select(from_json($"value", schema_of_json("""{"user":"", "timestamp":""}""")).as("data"))
-      .select($"data.user", $"data.timestamp")
+      .select($"data.user", $"data.timestamp".cast("timestamp").as("timestamp"))
 
     val windowedCounts = eventStream
       .withWatermark("timestamp", "4 minutes")

@@ -44,7 +44,7 @@ hut-stream-producer-cluster: deploy
 .PHONY: hut-stream-subscriber-local
 hut-stream-subscriber-local: build
 	AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT=true KAFKA_BROKER=192.168.0.132:9094 \
-	(SPARK_HOME)/bin/spark-submit \
+	$(SPARK_HOME)/bin/spark-submit \
 		--class "HutSubscriber" \
 		--master local[4] \
 		target/scala-2.12/hello-spark_2.12-1.0.jar
@@ -53,3 +53,19 @@ hut-stream-subscriber-local: build
 hut-stream-subscriber-cluster: build
 	$(KUBECTL) delete -f infra/hut-stream-subscriber.yaml --ignore-not-found
 	$(KUBECTL) apply -f infra/hut-stream-subscriber.yaml
+
+.PHONY: event-producer-local
+event-producer-local: build
+	AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT=true KAFKA_BROKER=192.168.0.132:9094 \
+	$(SPARK_HOME)/bin/spark-submit \
+		--class "EventProducer" \
+		--master local[4] \
+		target/scala-2.12/hello-spark_2.12-1.0.jar
+
+.PHONY: event-subscriber-local
+event-subscriber-local: build
+	AWS_JAVA_V1_DISABLE_DEPRECATION_ANNOUNCEMENT=true KAFKA_BROKER=192.168.0.132:9094 \
+	$(SPARK_HOME)/bin/spark-submit \
+		--class "EventSubscriber" \
+		--master local[4] \
+		target/scala-2.12/hello-spark_2.12-1.0.jar
