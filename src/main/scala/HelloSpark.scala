@@ -11,6 +11,10 @@ import java.time.format.DateTimeFormatter
 import scala.util.Random
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import com.fasterxml.jackson.databind.SerializationFeature
+import java.sql.Timestamp
 
 case class Hut(
     status: String,
@@ -38,6 +42,15 @@ case class Kafka(
     headers: Option[Array[String]],
     topic: Option[String],
     partition: Option[Int]
+)
+
+case class GPSEvent(
+    vehicle: String,
+    latitude: Double,
+    longitude: Double,
+    speed: Double,
+    heading: Double,
+    timestamp: java.sql.Timestamp
 )
 
 object HutBatch {
@@ -88,7 +101,7 @@ object HutProducer {
   def main(args: Array[String]): Unit = {
     val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
       case Some(broker) => broker
-      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+      case None => throw new IllegalArgumentException("KAFKA_BROKER environment variable required")
     }
 
     val spark: SparkSession = SparkSession.builder
@@ -146,7 +159,7 @@ object HutSubscriber {
   def main(args: Array[String]): Unit = {
     val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
       case Some(broker) => broker
-      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+      case None => throw new IllegalArgumentException("KAFKA_BROKER environment variable required")
     }
 
     val spark: SparkSession = SparkSession.builder
@@ -184,23 +197,45 @@ object EventProducer {
   def main(args: Array[String]): Unit = {
     val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
       case Some(broker) => broker
-      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+      case None => throw new IllegalArgumentException("KAFKA_BROKER environment variable required")
     }
 
-    val users     = Array("phish3y", "frantjc", "antonia", "peach", "kiriko")
-    val formatter = DateTimeFormatter.ISO_INSTANT
+    val objectMapper = new ObjectMapper()
+    objectMapper.registerModule(DefaultScalaModule)
+    objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
 
-    def generateRandomEvent(): String = {
-      val user = users(Random.nextInt(users.length))
-      val now  = Instant.now()
+    var lat       = 37.7749
+    var lon       = -122.4194
+    var speed     = 50.0
+    var heading   = 90.0
+    val vehicleId = "car-1"
 
-      val timestamp = if (Random.nextBoolean()) {
-        now.minus(Random.nextInt(3), ChronoUnit.MINUTES)
-      } else {
-        now
-      }
+    def generateGpsEvent(): String = {
+      val distanceKmPerSec = speed / 3600.0
+      val headingRad       = Math.toRadians(heading)
 
-      s"""{"user":"$user","timestamp":"${formatter.format(timestamp)}"}"""
+      val deltaLat = distanceKmPerSec * Math.cos(headingRad) / 111.0
+      val deltaLon =
+        distanceKmPerSec * Math.sin(headingRad) / (111.0 * Math.cos(Math.toRadians(lat)))
+
+      lat += deltaLat
+      lon += deltaLon
+
+      speed += (Random.nextDouble() - 0.5) * 2
+      heading += (Random.nextDouble() - 0.5) * 5
+
+      heading = (heading + 360) % 360
+
+      val event = GPSEvent(
+        vehicle = vehicleId,
+        latitude = BigDecimal(lat).setScale(6, BigDecimal.RoundingMode.HALF_UP).toDouble,
+        longitude = BigDecimal(lon).setScale(6, BigDecimal.RoundingMode.HALF_UP).toDouble,
+        speed = BigDecimal(speed).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble,
+        heading = BigDecimal(heading).setScale(2, BigDecimal.RoundingMode.HALF_UP).toDouble,
+        timestamp = Timestamp.from(Instant.now())
+      )
+
+      objectMapper.writeValueAsString(event)
     }
 
     val props = new Properties()
@@ -211,19 +246,59 @@ object EventProducer {
     val producer = new KafkaProducer[String, String](props)
 
     while (true) {
-      val event  = generateRandomEvent()
+      val event  = generateGpsEvent()
       val record = new ProducerRecord[String, String]("events", null, event)
       producer.send(record)
-      Thread.sleep(1000)
+      Thread.sleep(5000)
     }
   }
 }
 
 object EventSubscriber {
+  val baseNetwork: Seq[(Double, Double)] = Seq(
+    (37.77490, -122.41940),
+    (37.77495, -122.41930),
+    (37.77500, -122.41920),
+    (37.77505, -122.41910),
+    (37.77510, -122.41900),
+    (37.77490, -122.41950),
+    (37.77495, -122.41960),
+    (37.77500, -122.41970),
+    (37.77505, -122.41980),
+    (37.77510, -122.41990),
+    (37.77480, -122.41930),
+    (37.77485, -122.41920),
+    (37.77490, -122.41910),
+    (37.77495, -122.41900),
+    (37.77500, -122.41890),
+    (37.77510, -122.41880),
+    (37.77485, -122.41950),
+    (37.77480, -122.41960),
+    (37.77475, -122.41970),
+    (37.77470, -122.41980)
+  )
+
+  def haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double = {
+    val R    = 6371000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.pow(Math.sin(dLat / 2), 2) +
+      Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+      Math.pow(Math.sin(dLon / 2), 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    R * c
+  }
+
+  def isNearBaseNetwork(lat: Double, lon: Double, radius: Double = 10.0): Boolean = {
+    baseNetwork.exists { case (baseLat, baseLon) =>
+      haversine(lat, lon, baseLat, baseLon) <= radius
+    }
+  }
+
   def main(args: Array[String]): Unit = {
     val kafkaBroker = sys.env.get("KAFKA_BROKER") match {
       case Some(broker) => broker
-      case None => throw new IllegalStateException("KAFKA_BROKER environment variable required")
+      case None => throw new IllegalArgumentException("KAFKA_BROKER environment variable required")
     }
 
     val spark: SparkSession = SparkSession.builder
@@ -237,30 +312,56 @@ object EventSubscriber {
 
     import spark.implicits._
 
-    val eventStream = spark.readStream
+    val schema = Encoders.product[GPSEvent].schema
+    val eventStream: Dataset[GPSEvent] = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkaBroker)
       .option("subscribe", "events")
       .load()
       .selectExpr("CAST(value AS STRING)")
-      .select(from_json($"value", schema_of_json("""{"user":"", "timestamp":""}""")).as("data"))
-      .select($"data.user", $"data.timestamp".cast("timestamp").as("timestamp"))
+      // .select(from_json($"value", schema_of_json("""{"user":"", "timestamp":""}""")).as("data"))
+      // .select($"data.user", $"data.timestamp".cast("timestamp").as("timestamp"))
+      .select(from_json($"value", schema).as("data"))
+      .select($"data.*")
+      .as[GPSEvent]
 
-    val windowedCounts = eventStream
-      .withWatermark("timestamp", "4 minutes")
-      .groupBy(
-        window($"timestamp", "6 minutes"),
-        $"user"
-      )
-      .count()
-
-    val query = windowedCounts.writeStream
+    val rawQuery = eventStream.writeStream
       .outputMode("append")
       .format("console")
       .option("truncate", "false")
+      .queryName("raw")
       .start()
 
-    query.awaitTermination()
+    val nearbyEvents =
+      eventStream.filter(event => isNearBaseNetwork(event.latitude, event.longitude))
+    val nearbyQuery = nearbyEvents.writeStream
+      .outputMode("append")
+      .format("console")
+      .option("truncate", "false")
+      .queryName("nearbyEvents")
+      .start()
+
+    val windowAgg = eventStream
+      .withWatermark("timestamp", "5 seconds")
+      .groupBy(
+        window($"timestamp", "30 seconds"),
+        $"vehicle"
+      )
+      .agg(
+        count("*").as("count"),
+        avg($"speed").as("avg_speed")
+      )
+
+    val aggQuery = windowAgg.writeStream
+      .outputMode("append")
+      .format("console")
+      .option("truncate", "false")
+      .queryName("windowAgg")
+      .start()
+
+    rawQuery.awaitTermination()
+    nearbyQuery.awaitTermination()
+    aggQuery.awaitTermination()
 
     spark.stop()
   }
